@@ -1,0 +1,388 @@
+>>>malloy
+source: SurveyInformation is duckdb.table('./survey.csv') extend {
+    primary_key: `Survey ResponseID` 
+    measure: total is count()
+    dimension:
+    HispanicOrigin is `Q-demos-hispanic`
+    AgeGroup is `Q-demos-age`
+    Race is `Q-demos-race`
+    EducationLevel is `Q-demos-education`
+    HHIncome is `Q-demos-income`
+    Gender is `Q-demos-gender`
+    SexualOrientation is `Q-sexual-orientation`
+    HomeState is `Q-demos-state`
+    PeopleOnAccount is `Q-amazon-use-howmany`
+    Household is `Q-amazon-use-hh-size`
+    AmazonUse is `Q-amazon-use-how-oft`
+    CigaretteUse is `Q-substance-use-cigarettes`
+    MarijuanaUse is `Q-substance-use-marijuana`
+    AlchoholUse is `Q-substance-use-alcohol`
+    Diabetes is `Q-personal-diabetes`
+    Wheelechair is `Q-personal-wheelchair`
+    LifeChanges is `Q-life-changes`
+    SellData is `Q-sell-YOUR-data`
+    SellConsumerData is `Q-sell-consumer-data`
+    SmallBusinessUse is `Q-small-biz-use`
+    CensusUse is `Q-census-use`
+    ResearchUse is `Q-research-society`
+
+}
+source: AmazonInformation is duckdb.table('./amazon-purchases.csv') extend {
+    measure: total is count()
+    measure: TotalSpent is sum(`Purchase Price Per Unit`)
+    rename: PurchaseDate is `Order Date`
+    join_one: SurveyInformation with `Survey ResponseID`
+    view:  BooksPurchased is {
+        where: Category = "ABIS_BOOK"
+        group_by: Title 
+        aggregate: total
+    }
+    view: ExpensiveItems is {
+        where: SurveyInformation.HHIncome = '$150,000 or more'
+        group_by: Category
+        group_by: `Purchase Price Per Unit`
+        order_by: `Purchase Price Per Unit` desc
+    }
+
+    view: ByState is {
+        group_by: SurveyInformation.HomeState
+        aggregate: total
+    }
+
+    view: ByIncome is {
+        group_by: SurveyInformation.HHIncome
+        aggregate: total
+    }
+
+}
+>>>markdown
+# Amazon Data 
+This data set contains information on what people have purchased from Amazon. The analysis will look into answering questions like what is most commonly ordered, where these purchases are taking place, and how much money is being spent on Amazon.
+>>>markdown
+## General Information
+In this section, I will provide general information gathered from the data to get an idea of what we are dealing with. Below you will find information on the unique categories, unique items, time span, pricing, and quantity. 
+>>>markdown
+#### Unique Categories
+There are 1,871 different categories used to describe the items purchased.
+>>>malloy
+run: AmazonInformation -> {
+    aggregate: CategoryCount is count(Category)
+}
+>>>markdown
+Of these unique categories, ABIS_BOOK was the most popular with 89,458 total purchases. Additional information on number of purchases by category are shown below.
+>>>malloy
+run: AmazonInformation -> {
+    group_by: Category
+    aggregate: total
+    }
+>>>markdown
+#### Unique Items
+There are 824,722 unique items purchased from Amazon recorded in this data set.
+>>>malloy
+run: AmazonInformation -> {
+    aggregate: ItemCount is count(Title)
+}
+>>>markdown
+Of these items purchased, gift cards and reloading of giftcards are shown to be the most purchased item. 
+>>>malloy
+run: AmazonInformation -> {
+    group_by: Title
+    aggregate: total
+    }
+>>>markdown
+#### Timespan 
+The purchases recorded in this date span from January 1, 2018 to August 15, 2024.
+>>>malloy
+run: AmazonInformation -> {
+    aggregate: 
+        StartDate is min(PurchaseDate)
+        EndDate is max(PurchaseDate)
+}
+>>>markdown
+#### General Pricing
+This tells me that the most expensive item purchased cost $6,398.95, and the cheapest item purchased cost $0.01.
+>>>malloy
+run: AmazonInformation -> {
+    aggregate:  
+        HighestPrice is max(`Purchase Price Per Unit`)
+        LowestPrice is min(`Purchase Price Per Unit`)
+}
+>>>markdown
+#### Quantity
+Below, we see that the item with the greatest purchase quantity was Photo prints, ordered 339 times. 
+>>>malloy
+run: AmazonInformation -> {
+    group_By: Quantity
+    group_By: Title
+    order_by: Quantity desc
+}
+>>>markdown
+## Survey Data
+Included in the Amazon purchases data included information from a respondant survey. To gain more information on the survey, I joined in another data set with the responses. These two data sets are joined through their Survey ResponseID. Each Survey ResponseID is attached to a specific order on the AmazonInformation dataset, and offers insight on the purchaser. Information from this survey including age groups, number of people on each account, race, gender, and use is shown below.
+>>>markdown
+#### Age groups
+This tells me that the majority of Amazon users are between the ages of 25 and 44 years old.
+>>>malloy
+run: SurveyInformation -> {
+    group_by: AgeGroup
+    aggregate: total
+    order_by: AgeGroup
+}
+>>>markdown
+#### People on each Amazon account
+This data tells us that the majority of Amazon accounts comprise of just one person. This is surprising data to me, as I would assume accounts are generally shared between families or friends. 
+>>>malloy
+run: SurveyInformation -> {
+    group_by: PeopleOnAccount
+    aggregate: total
+}
+>>>markdown
+#### Race
+Below, data on the race of Amazon users are shown. These results indicate that the vast majority of users are White / Caucasian. 
+>>>malloy
+run: SurveyInformation -> {
+    group_by: Race
+    aggregate: total
+}
+>>>markdown
+#### Gender 
+Here, we see that although purchasers are a majority female, male users are close behind.
+>>>malloy
+run: SurveyInformation -> {
+    group_by: Gender
+    aggregate: total
+}
+>>>markdown
+#### Amazon Use
+Below, the table shows information on how often users purchase from Amazon. 
+>>>malloy
+run: SurveyInformation -> {
+    group_by: AmazonUse 
+    aggregate: total
+}
+>>>markdown
+## Deeper Dive 
+The data above offers a general idea of what is included in the two data sets used in this analysis. First, general information on Amazon purchases, and second, general information on the people behind those purchases. To make this analysis more useful, the code below will take a deeper look into using those two data sets in conjunction to answer more intricate questions.
+>>>markdown
+#### ABIS_BOOKS purchases 
+Building off of the general analysis above, ABIS_BOOKS was the most purchased item on Amazon with 89,458 purchases. Building off of that information, the analysis below offers more detail on what those purchases entail, and who they were purchased by.
+>>>markdown
+First, I wanted to understand what books were being purchased. Ignoring the giftcard and null value, it looks like the most purchased books are 'The Body Keeps the Score: Brain, Mind, and Body in the Healing of Trauma', 'Becoming', and 'Atomic Habits: An Easy & Proven Way to Build Good Habits & Break Bad Ones'.
+
+To use this grouping of information more easily, I created a view in the source labeled 'BooksPurchased'. This allows me to use this information in conjunction with survey data more easily. 
+>>>malloy
+run: AmazonInformation -> { 
+    where: Category = "ABIS_BOOK"
+    group_by: Title 
+    aggregate: total
+    }
+>>>markdown
+By using the view created above, I was able to run the BooksPurchased data and break it down by the age group. This tells me the age of people buying specific books. For example, it makes sense that the majority of people buying 'The Very Hungry Caterpillar' is 25-34 years old, likely purchasing for their children. Whereas, only 2 people 65 and older have purchased that book, as they are not having children. 
+
+Using this data, we can better understand who is buying what books and could likely adjust marketing startegies to show these books to consumers in a specific age group. 
+>>>malloy
+run: AmazonInformation -> BooksPurchased + {
+    nest: PurchaserInfo is {
+    group_by: SurveyInformation.AgeGroup
+    aggregate: total
+    }
+}
+>>>markdown
+Out of curiosity, I wanted to know what the most expensive book purchased on Amazon was. To no surprise, the most expensive books listed are textbooks. 
+>>>malloy
+run: AmazonInformation -> { 
+    where: Category = "ABIS_BOOK"
+    group_by: Title 
+    group_by: `Purchase Price Per Unit`
+    order_by: `Purchase Price Per Unit` desc
+    }
+>>>markdown
+Lets take a look into books purchased by price. Below, we can see the most purchased books borken down by price, and number of people that bought that book at a specific price. Something that surprised me here was the variety in price for the same book. I had to put a limit of 3 on this data, as there was tramendous variety in purchase price by book. 
+>>>malloy
+run: AmazonInformation -> BooksPurchased + {
+    nest: PurchaseInfo is {
+    group_by: `Purchase Price Per Unit`
+    aggregate: total
+    order_by: `Purchase Price Per Unit` desc
+    limit: 3
+    }
+}
+>>>markdown
+More specifically, I want to know how book purchases are broken down by price. I also borught in information on who purchased these items. Specifically, the age group and their education level. I did this because the most expensive books purchased were textbooks, so I would suspect that they were purchased by college students. This code can confirm that theory.
+>>>malloy
+run: AmazonInformation -> {
+    where: Category = 'ABIS_BOOK'
+    group_by: Title
+    group_by: `Purchase Price Per Unit`
+    order_by: `Purchase Price Per Unit` desc
+    nest: PurchaserInfo is {
+        group_by: SurveyInformation.AgeGroup
+        group_by: SurveyInformation.EducationLevel
+    }
+    
+}
+>>>markdown
+#### Purchase by Category
+Rather than limiting the purchases to only books, I opened the analysis up to the categories with the 10 most recorded purchases - ABIS_BOOK, PET_FOOD, GIFT_CARD, SHIRT, NUTRITIONAL_SUPPLEMENT, ELECTRONIC_CABLE, HEALTH_PERSONAL_CARE, MEDICATION, PANTS, and CELLULAR_PHONE_CASE.
+
+This tells us the top 5 most purchased item in the top 10 most purchased categories, along with their related purchase price.
+>>>malloy
+run: AmazonInformation -> {
+    where: Category = 'ABIS_BOOK' | 'PET_FOOD' | 'GIFT_CARD' | 'SHIRT' | 'NUTRITIONAL_SUPPLEMENT' | 'ELECTRONIC_CABLE' | 'HEALTH_PERSONAL_CARE' | 'MEDICATION' | 'PANTS' | 'CELLULAR_PHONE_CASE'
+    group_by: Category
+    nest: PurchaseInfo is {
+        group_by: Title 
+        group_by: `Purchase Price Per Unit`
+        aggregate: total
+        limit: 5
+    }
+}
+>>>markdown
+## Purchases over time
+Moving away from the category and item type, lets look at how purchases flutuate over time.
+>>>markdown
+First, lets look at purchases by year. From here, we can break things down further, but generally 2021 and 2022 were the most purchased year. It is interesting to note the huge drop in 2023. 
+>>>malloy
+# line_chart
+run: AmazonInformation -> {
+    group_by: PurchaseDate.year
+    aggregate: total
+}
+>>>markdown
+Now lets take a deeper dive into 2021, the year with the most recorded purchases. Below, we see how those purchases are spread out by month. To no surprise, the month with the most purchases is December. I suspect this is due to its relative closeness to Christmas. 
+>>>malloy
+# line_chart
+run: AmazonInformation -> {
+    where: PurchaseDate.year = @2021
+    group_by: PurchaseDate.month
+    aggregate: total
+}
+>>>markdown
+Lets look at what people were buying in December 2021. Surprisingly, this data does not differ much from general trends found above. Although similar, we see new categories like Toy figures, and Toys & Games. This makes sense as they are likely christmas presents.
+>>>malloy
+run: AmazonInformation -> {
+    where: PurchaseDate.year = @2021
+    where: PurchaseDate.month = @2021-12
+    group_by: Category
+    aggregate: total
+    nest: DecemberPurcahses is {
+        group_by: Title
+        group_by: `Purchase Price Per Unit`
+        limit: 3
+    }
+}
+>>>markdown
+## Money
+Moving away from the above code, I want to bring in more of the survey data. The first thing that catches my attention would be what the rich people are spending their money on Amazon. To do that, first lets break up the users by household income. 
+>>>markdown
+First, I wanted to get an idea of how the income was broke down. The code below shows the income buckets with the number of users in that bracket.
+>>>malloy
+run: SurveyInformation -> {
+    group_by: HHIncome
+    aggregate: total
+}
+>>>markdown
+Below, we see the top 5 most purchased categories broken down by income group. From here, I looked at the top 5 most expensive items purchased in each category.
+>>>malloy
+run: AmazonInformation -> {
+    group_by: SurveyInformation.HHIncome
+    nest: Purchases is {
+        group_by: Category
+        aggregate: total
+        order_by: total desc
+        limit: 5
+        nest: CategoryInfo is {
+            group_by: Title
+            group_by: `Purchase Price Per Unit`
+            order_by: `Purchase Price Per Unit` desc
+            limit: 5
+        }
+    }
+}
+>>>markdown
+Getting more into what the group with the highest household income is purchasing, the code below shows the most expensive items purchased by this group of people. 
+>>>malloy
+run: AmazonInformation -> {
+    where: SurveyInformation.HHIncome = '$150,000 or more'
+    group_by: Category
+    group_by: `Purchase Price Per Unit`
+    order_by: `Purchase Price Per Unit` desc
+}
+>>>markdown
+Below, using another view function, I was able to find out exactly what those items purchased were, the age of who purchased them, and where they were purchased. 
+>>>malloy
+run: AmazonInformation -> ExpensiveItems + {
+    group_by: Title
+    nest: PurchaserInfo is {
+        group_by: SurveyInformation.AgeGroup
+        group_by: SurveyInformation.HomeState
+    }
+}
+>>>markdown
+Lets take a look at how amazon purchases are spread out by state. Below, we see that California and Texas seem to have the most purchases. 
+>>>malloy
+# shape_map
+run: AmazonInformation -> ByState + {
+}
+>>>markdown
+Below, we can see how purchases are spread out in california first by age group, then by household income, then by category and purchase price. This gives us a really good general idea of who is buying what the most. 
+>>>malloy
+run: AmazonInformation -> {
+    where: SurveyInformation.HomeState = 'California'
+    group_by: SurveyInformation.AgeGroup
+    nest: CaliforniaConsumers is {
+        group_by: SurveyInformation.HHIncome
+        order_by: HHIncome desc
+        nest: Purchases is {
+            group_by: Category
+            aggregate: total
+            order_by: total desc
+            limit: 5
+            nest: ItemsPurchased is {
+                group_by: Title
+                group_by: `Purchase Price Per Unit`
+                aggregate: total 
+                order_by: total desc
+                limit: 5
+
+            }
+        }
+    }
+}
+>>>markdown
+## My Age Group - 18-24
+Now I am going to do a deeper dive into where my age group spends their money. To start, I found a total amount of money spent on each category.
+>>>malloy
+run: AmazonInformation -> {
+    where: SurveyInformation.AgeGroup = '18 - 24 years'
+    group_by: Category
+    aggregate: TotalSpent
+}
+>>>markdown
+Then I was able to create a bar chart showing the total money spent on amazon in each year, with a tooltip showing the top 5 categories purchased in that year by my age group. You will see this information by hovering over each bar in the graph. 
+>>>malloy
+# bar_chart 
+run: AmazonInformation -> {
+    where: SurveyInformation.AgeGroup = '18 - 24 years'
+    group_by: PurchaseDate.year
+    aggregate: TotalSpent
+    # tooltip 
+    nest: TopCategories is {
+        group_by: Category
+        aggregate: total
+        limit: 5
+    }
+
+}
+>>>markdown
+Lastly, I was curious how this age group was spread throughout the US. You can see this through the visualization below. If you hover over each state, you can see how the users are broken down by gender. 
+>>>malloy
+# shape_map
+run: AmazonInformation -> ByState + {
+    where: SurveyInformation.AgeGroup = '18 - 24 years'
+    # tooltip 
+    nest: Users is {
+        group_by: SurveyInformation.Gender
+        aggregate: total
+    }
+}
