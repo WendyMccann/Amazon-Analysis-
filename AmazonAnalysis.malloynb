@@ -1,0 +1,358 @@
+>>>markdown
+# Amazon Purchases and Consumer Survey Analysis 
+This analysis aims to understand Amazon consumer purchasing behavior through the use of two data sets. First, offering information on the items purchased from Amazon. This includes details such as price, quantity, category, title, and more. And second, responses from the customer survey taken after each purchase. This information can be used by businesses to refine their strategies and better serve their target audience. 
+>>>malloy
+source: SurveyInformation is duckdb.table('./survey copy.csv') extend {
+    primary_key: `Survey ResponseID` 
+    measure: total is count()
+    dimension:
+    HispanicOrigin is `Q-demos-hispanic`
+    AgeGroup is `Q-demos-age`
+    Race is `Q-demos-race`
+    EducationLevel is `Q-demos-education`
+    HHIncome is `Q-demos-income`
+    Gender is `Q-demos-gender`
+    SexualOrientation is `Q-sexual-orientation`
+    HomeState is `Q-demos-state`
+    PeopleOnAccount is `Q-amazon-use-howmany`
+    Household is `Q-amazon-use-hh-size`
+    AmazonUse is `Q-amazon-use-how-oft`
+    CigaretteUse is `Q-substance-use-cigarettes`
+    MarijuanaUse is `Q-substance-use-marijuana`
+    AlchoholUse is `Q-substance-use-alcohol`
+    Diabetes is `Q-personal-diabetes`
+    Wheelechair is `Q-personal-wheelchair`
+    LifeChanges is `Q-life-changes`
+    SellData is `Q-sell-YOUR-data`
+    SellConsumerData is `Q-sell-consumer-data`
+    SmallBusinessUse is `Q-small-biz-use`
+    CensusUse is `Q-census-use`
+    ResearchUse is `Q-research-society`
+
+}
+source: AmazonInformation is duckdb.table('./amazon-purchases copy.csv') extend {
+    measure: total is count()
+    measure: TotalSpent is sum(`Purchase Price Per Unit`)
+    measure: AvgPrice is avg(`Purchase Price Per Unit`)
+    rename: PurchaseDate is `Order Date`
+    join_one: SurveyInformation with `Survey ResponseID`
+    view:  BooksPurchased is {
+        where: Category = "ABIS_BOOK"
+        group_by: Title 
+        aggregate: total
+    }
+    view: ExpensiveItems is {
+        where: SurveyInformation.HHIncome = '$150,000 or more'
+        group_by: Category
+        group_by: `Purchase Price Per Unit`
+        order_by: `Purchase Price Per Unit` desc
+    }
+
+    view: ByState is {
+        group_by: SurveyInformation.HomeState
+        aggregate: total
+    }
+
+    view: ByHHIncome is {
+        group_By: SurveyInformation.HHIncome
+        aggregate: total
+    }
+
+    view: ByIncome is {
+        group_by: SurveyInformation.HHIncome
+        aggregate: total
+    }
+
+}
+>>>markdown
+# General Amazon Data 
+Below you will find a general analysis of information found in the Amazon purchases csv. 
+>>>malloy
+-- Number of unique categories describing the data: 1,871
+run: AmazonInformation -> {
+    aggregate: CategoryCount is count(Category)
+}
+
+-- Total purchases by category: most purchased item - ABIS_BOOK 89,458 purchases
+run: AmazonInformation -> {
+    group_by: Category
+    aggregate: total
+    }
+
+-- Number of unique items purchased: 824,722 
+run: AmazonInformation -> {
+    aggregate: ItemCount is count(Title)
+}
+
+-- Most purcahsed item: Amazon Gift cards
+run: AmazonInformation -> {
+    group_by: Title
+    aggregate: total
+    }
+
+-- This data set spans the time period of January 1, 2018 to August 15, 2024
+run: AmazonInformation -> {
+    aggregate: 
+        StartDate is min(PurchaseDate)
+        EndDate is max(PurchaseDate)
+}
+
+-- Item pricing panges from $6,398.95 to $0.01
+run: AmazonInformation -> {
+    aggregate:  
+        HighestPrice is max(`Purchase Price Per Unit`)
+        LowestPrice is min(`Purchase Price Per Unit`)
+}
+
+-- The item purchased the most at once was photo prints 
+run: AmazonInformation -> {
+    group_By: Quantity
+    group_By: Title
+    order_by: Quantity desc
+}
+>>>markdown
+# General Survey data
+Below you will find a general analysis of the survey response data. 
+>>>malloy
+-- The age groups are broken down into 18-24, 25-34, 35-44, 45-54, 55-64, and 65 and older
+run: SurveyInformation -> {
+    group_by: AgeGroup
+    aggregate: total
+    order_by: AgeGroup
+}
+-- 70.54% of users have their own Amazon account 
+run: SurveyInformation -> {
+    group_by: PeopleOnAccount
+    aggregate: total
+    AllTotal is all(total)
+    # percent
+    AccountPercentage is total/all(total)
+}
+-- 77.3% of users are white / caucasian
+run: SurveyInformation -> {
+    group_by: Race
+    aggregate: total
+    AllTotal is all(total)
+    # percent
+    RacePercentage is total/all(total)
+}
+-- 51.5% of users are female 
+run: SurveyInformation -> {
+    group_by: Gender
+    aggregate: total
+    Alltotal is all(total)
+    # percent
+    GenderPercentage is total/all(total)
+}
+-- 64.43% of consumers use Amazon less than 5 times per month
+run: SurveyInformation -> {
+    group_by: AmazonUse 
+    aggregate: total
+    # percent 
+    UsePercent is total/all(total)
+}
+>>>markdown
+# Analysis 
+Below, I have used these two data sets to answer high level questions and analyze the data. 
+>>>markdown
+### Purchases by category
+>>>malloy
+-- No one category represents more than 5% of total purchases. 
+run: AmazonInformation -> {
+    group_by: Category
+    aggregate: total
+    AllTotal is all(total)
+    # percent
+    CategoryPercentage is total/all(total)
+}
+-- The top 5 most purchased item in the top categories are shown below. 
+run: AmazonInformation -> {
+    where: Category = 'ABIS_BOOK' | 'PET_FOOD' | 'GIFT_CARD' | 'SHIRT' | 'NUTRITIONAL_SUPPLEMENT' | 'ELECTRONIC_CABLE' | 'HEALTH_PERSONAL_CARE' | 'MEDICATION' | 'PANTS' | 'CELLULAR_PHONE_CASE'
+    group_by: Category
+    nest: PurchaseInfo is {
+        group_by: Title 
+        group_by: `Purchase Price Per Unit`
+        aggregate: total
+        limit: 5
+    }
+}
+-- 25-34 year olds have purchased the most books based on the top 5 most commenly listed items
+run: AmazonInformation -> BooksPurchased + {
+    nest: PurchaserInfo is {
+    group_by: SurveyInformation.AgeGroup
+    aggregate: total
+    }
+}
+-- The most expensive books purchased on Amazon were text books. This code offers information on the age of consumers buying these text books and their education level 
+run: AmazonInformation -> { 
+    where: Category = "ABIS_BOOK"
+    group_by: Title 
+    group_by: `Purchase Price Per Unit`
+    order_by: `Purchase Price Per Unit` desc
+    nest: TextbookPurchasers is {
+        group_by: SurveyInformation.AgeGroup
+        nest: Education is {
+        group_by: SurveyInformation.EducationLevel
+        }
+    }
+    }
+>>>markdown
+### Purchases by time period.
+>>>malloy
+-- 2021 had the most purchases by year. Hovering over each collumn offers more details on the items purchased that year.
+# bar_chart
+run: AmazonInformation -> {
+    group_by: PurchaseDate.year 
+    aggregate: total
+    # tooltip
+    nest: ItemsPurchased is {
+        group_by: Category
+        aggregate: total
+    }
+}
+-- The chart below shows purchases broken down monthly by year. November and December consistently have the most purchases. 
+-- Additionally, by hovering over each collumn, you can see how purchases were broken down by category.
+run: AmazonInformation -> {
+    group_by: PurchaseDate.year
+    # bar_chart
+    nest: Monthly is {
+        group_by: PurchaseDate.month
+        aggregate: total
+        # tooltip
+        nest: ByCategory is {
+            group_by: Category
+            aggregate: total
+        }
+    }
+}
+-- During December, we see new popular categories show up like Toy Figures and Toys & Games
+run: AmazonInformation -> {
+    where: PurchaseDate.year = @2021
+    where: PurchaseDate.month = @2021-12
+    group_by: Category
+    aggregate: total
+    nest: DecemberPurcahses is {
+        group_by: Title
+        group_by: `Purchase Price Per Unit`
+        limit: 3
+    }
+}
+>>>markdown
+### Purchases in relation to income
+>>>malloy
+-- 23.65% of users have an income between $25,00-$49,999
+run: SurveyInformation -> {
+    group_by: HHIncome
+    aggregate: total
+     AllTotal is all(total)
+    # percent
+    HHIncomePercentage is total/all(total)
+}
+-- Total amount spent by income
+run: AmazonInformation -> {
+    group_by: SurveyInformation.HHIncome
+    aggregate: TotalSpent
+}
+-- This table shows the most purchased category and the average price paid for that item by household income.
+run: AmazonInformation -> {
+    group_by: SurveyInformation.HHIncome
+    nest: PurchaseInfo is {
+        group_by: Category
+        aggregate: total
+        aggregate: AvgPrice
+        limit: 5
+    }
+}
+-- Most expensive items purchased by each income grouping
+run: AmazonInformation -> {
+    group_by: SurveyInformation.HHIncome
+    nest: ExpensiveItems is {
+        group_by: Title
+        group_by: `Purchase Price Per Unit`
+        order_by: `Purchase Price Per Unit` desc
+        limit: 5
+    }
+}
+-- Income by state
+# shape_map
+run: AmazonInformation -> {
+    group_by: `Shipping Address State`
+    nest: ConsumerInfo is {
+        group_by: SurveyInformation.HHIncome
+        aggregate: total
+    }
+}
+-- Spending distribution by category
+# bar_chart
+run: AmazonInformation -> {
+    group_by: Category 
+    group_by: SurveyInformation.HHIncome
+    aggregate: TotalSpent
+
+}
+>>>markdown
+### Purchases by location
+>>>malloy
+-- A majority of purchases occured in California and Texas
+# shape_map
+run: AmazonInformation -> ByState + {
+}
+-- Specifically, 9.65 percent in California
+run: AmazonInformation -> {
+    group_by: `Shipping Address State`
+    aggregate: total
+    AllTotal is all(total)
+    # percent
+    StatePercentage is total/all(total)
+}
+-- Purchases by age group in California, the most popular purchase state
+run: AmazonInformation -> {
+    where: SurveyInformation.HomeState = 'California'
+    group_by: SurveyInformation.AgeGroup
+    nest: CaliforniaConsumers is {
+        group_by: SurveyInformation.HHIncome
+        order_by: HHIncome desc
+        nest: Purchases is {
+            group_by: Category
+            aggregate: total
+            order_by: total desc
+            limit: 5
+            nest: ItemsPurchased is {
+                group_by: Title
+                group_by: `Purchase Price Per Unit`
+                aggregate: total 
+                order_by: total desc
+                limit: 5
+
+            }
+        }
+    }
+}
+>>>markdown
+### Purchases by age group
+>>>malloy
+-- Top 5 purchase categories by year
+# bar_chart 
+run: AmazonInformation -> {
+    where: SurveyInformation.AgeGroup = '18 - 24 years'
+    group_by: PurchaseDate.year
+    aggregate: TotalSpent
+    # tooltip 
+    nest: TopCategories is {
+        group_by: Category
+        aggregate: total
+        limit: 5
+    }
+}
+-- 18-24 year old by location and income 
+run: AmazonInformation -> {
+    where: SurveyInformation.AgeGroup = '18 - 24 years'
+    group_by: `Shipping Address State`
+    aggregate: total
+    # tooltip 
+    nest: Population is {
+    group_by: SurveyInformation.HHIncome
+    aggregate: total
+    }
+
+}
